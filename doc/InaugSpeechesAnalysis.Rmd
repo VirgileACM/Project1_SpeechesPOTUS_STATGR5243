@@ -448,7 +448,8 @@ In conclusion, the level of linguistic used by the President of the United State
 
 ![US Capitol for Trump 2017](../figs/POTUS.jpg)
 
-For more information on Linguistic Complexity of the history of the POTUS inaugural speeches, here are some interesting links:
+For more information on Linguistic Complexity and the history of the POTUS inaugural speeches, here are some interesting links:
+
 [Education Approach to Linguistic Complexity Research](http://achievethecore.org/content/upload/nelson_perfetti_liben_measures_of_text_difficulty_research_ela.pdf)
 [Inaugural addresses of past presidents](http://www.cbsnews.com/news/inaugural-addresses-of-past-presidents/)
 [Trump Inaugural Speech against History](http://www.latimes.com/opinion/opinion-la/la-ol-trump-inauguration-kennedy-rosevelt-20170119-story.html)
