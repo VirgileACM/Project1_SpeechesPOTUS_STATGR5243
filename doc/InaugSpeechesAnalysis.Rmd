@@ -6,6 +6,9 @@ output:
   html_notebook: default
 ---
 
+![US Capitol for Trump 2017](../figs/InaugDay.jpg)
+
+
 #Step 0 - Install and load libraries
 
 We make sure that all the required libraries are correctly installed and loaded. We will use mainly NLP libraries.
@@ -228,7 +231,7 @@ shinyApp(
     options = list(height = 700)
 )
 ```
-Starting by comparing the inaugural speech of the 1st POTUS and the last one, one key difference is striking: the level of language. While George Washington's most relevant words are **providential**, **immutable**, **impressions**, **qualifications** and **peculiarly**, Donal J. Trump's top words are **America**, **Obama**, **dreams**, **everyone** and **dreams**. Comparing after Lincoln's first speech with Obama's, we observe the same difference: **clause**, **secede**, **case**, **minority** and **surrendered** against **icy**, **jobs**, **storms**, **winter** and **generation**.
+Starting by comparing the inaugural speech of the 1st POTUS and the last one, one key difference is striking: the level of language. While George Washington`s most relevant words are **providential**, **immutable**, **impressions**, **qualifications** and **peculiarly**, Donal J. Trump`s top words are **America**, **Obama**, **dreams**, **everyone** and **dreams**. Comparing after Lincoln`s first speech with Obama`s, we observe the same difference: **clause**, **secede**, **case**, **minority** and **surrendered** against **icy**, **jobs**, **storms**, **winter** and **generation**.
 
 Then multiple questions arise:
 
@@ -392,9 +395,9 @@ shinyApp(
 
 The results are quite clear, the **level is decreasing at least linearly at a rate of about 5% a year**. Also, **being Democrats or Republicans does not help**. It appears that they both are very similar in term of level of language. During the 19th century, Republicans seem to have been less sophiticated than their colleagues Democrats, however, the 20th century seem to prove the opposite with poor prestations of F.Roosevelt or L.Johnson. The worst grade is given to Georges H.W.Bush with a technical level Kindergarten. This seem quite accurate as underline this [source](http://www.globalresearch.ca/the-inaugural-speech-of-a-us-president-history-wisdom-and-the-trump-presidency/5568582) which relates that during his inaugural speech, the President G.H.W. Bush compared freedom to a kite.
 
-Also, it is interesting to look at the levels crossed during the 20th century. According to the data, no President since 1910 has given an inaugural speech at a level above College. On the other hand, only 4 Presidents have given a speech below College level until the 20th century. However, it is important to know that historically, the inaugural speech was not delivered to such an important crowd as now. It is only very recently that the inaugural speech became so popular due to communication tools available but also by being open to the public (historically it was given in the Congress). Nevertheless, we can observe that in-between 1975 to today, the average level is about 8th grade. The recent speech of D.J. Trump is also dragging the average down with an equivalent level of a 6th grader. 
+Also, it is interesting to look at the levels crossed during the 20th century. According to the data, **no President since 1910 has given an inaugural speech at a level above College**. On the other hand, only 4 Presidents have given a speech below College level until the 20th century. However, it is important to know that historically, the inaugural speech was not delivered to such an important crowd as now. It is only very recently that the inaugural speech became so popular due to communication tools available but also by being open to the public (historically it was given in the Congress). Nevertheless, we can observe that **in-between 1975 to today, the average level is about 8th grade**. The recent speech of D.J. Trump is also dragging the average down with an equivalent level of a 6th grader. 
 
-Finally, another interesting pattern is the evolution of linguistic level for Presidents that had more than one term. Clearly, some President (or their personal writer) seem to have been more lazy than other on their speeches. During tension and then War time, the level of F. Roosevelt significantly dropped, whereas Obama improved his speech the second year while already above the average. One specific interesting fact, is that President for their second term tend suffer from mean-reversion, a higher-than average speech the first term seems a good predictor for a below average second speech according to the data both from 19th and 20th century.
+Finally, another interesting pattern is the evolution of linguistic level for Presidents that had more than one term. Clearly, some President (or their personal writer) seem to have been more lazy than other on their speeches. During tension and then War time, the level of F. Roosevelt significantly dropped, whereas Obama improved his speech the second year while already above the average. One specific interesting fact, is that **Presidents for their second term tend suffer from mean-reversion**, a higher-than average speech the first term seems a good predictor for a below average second speech according to the data both from 19th and 20th century.
 
 
 # Step 8 - Topic modelling as an alternative to regression
@@ -403,26 +406,31 @@ Now, as a tentative, we will try to find some correlation between the complexity
 
 To do so, we will use a Tokenizer in Bigram (tokenize word and couple of consecutive words), that we will modelize again through a Term Document Matrix for test with [Latent Semantic Analysis](https://en.wikipedia.org/wiki/Latent_semantic_analysis) a similar approach to PCA but more suitable for text-based material.
 
-We compute 10 concepts
+We compute 10 concepts based on LSA, and we try from the 10 most relevant words from each concept to identify the idea behind that concept. For information, LSA is based on a [Singular Value Decomposition](https://en.wikipedia.org/wiki/Singular_value_decomposition) that try to find the best space to project the words according to the singular values of the Term Document Matrix.
 
 ```{r}
 # to compute faster NGramTokenizer by avoiding parrallelization that is poorly implemented
 options(mc.cores=1)
-
 NgramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min=1, max=2))
 
 # garbage word that comes often in result of LSA, keep result clean
 ff.all<-tm_map(ff.all, removeWords, c("us", "americaprevious", "upon", "shall", "roman", "texas", "ballot", "amid", "arrive"))
 
+# computation of the TDM
 tdmgram<-TermDocumentMatrix(ff.all, control = list(tokenize = NgramTokenizer, wordLengths = c(1, Inf) ))
 
+# we choose arbitrary 10 topic for LSA to identify
 dims <- 10
 ls <- lsa(as.textmatrix(as.matrix(tdmgram)), dims=dims)
 concepts.names <- c("Constitution","State","Values","Action","Union","Universal","People","America","Laws","Nation")
+# Find the top #10 relevant word for each concept
 concepts.top10 <- apply(ls$tk, 2, function(x)unique(names((sort(x, decreasing = T))))[1:10])
 for (i in 1:dims) { writeLines(paste("\n","Concept",i,": ",concepts.names[i],"\n",sep=" "));print(concepts.top10[,i]) }
 
 ```
+
+We decide for conclusion to visualize the evolution of the 10 identified topics according to the time. The findings are not that great. Across the history, the level went down quite rapidly, but the topics covered appear to have been the same. From the graphic, the only topic that has suffered is "State", which covers mostly part of speeches on the importance of America and its Institutions.
+On the other end, "America"" seem to be a topic well developped over the past few years.
 
 ```{r}
 # update with concepts
@@ -436,4 +444,12 @@ ing_final[12:21] <- t(apply(ing_final[12:21],1,function(x)cumsum(x)/max(cumsum(x
 ggplot(data=ing_final, aes(x=Year)) + geom_ribbon(aes(ymin=0,ymax=Nation), fill="gold")+ geom_ribbon(aes(ymin=0,ymax=Laws), fill="darkorange") + geom_ribbon(aes(ymin=0,ymax=America), fill="firebrick2")  + geom_ribbon(aes(ymin=0,ymax=People), fill="firebrick4") + geom_ribbon(aes(ymin=0,ymax=Universal), fill="darkmagenta") + geom_ribbon(aes(ymin=0,ymax=Union), fill="darkorchid4") + geom_ribbon(aes(ymin=0,ymax=Action), fill="darkorchid1") + geom_ribbon(aes(ymin=0,ymax=Values), fill="dodgerblue3") + geom_ribbon(aes(ymin=0,ymax=State), fill="dodgerblue") + geom_ribbon(aes(ymin=0,ymax=Constitution), fill="deepskyblue") + ggtitle("vrvr") + annotate(geom="text", label=concepts.names, x=rep(1790,10), y=seq(0.05,0.90,length.out = 10), vjust=-1, fontface=2)+ggtitle("Evolution of concepts across history as a stacked-bar") + labs(y="Proportion importance of concept") + theme(plot.title = element_text(hjust=0.5))
 ```
 
+In conclusion, the level of linguistic used by the President of the United States of America seem to have suffered a lot for the past 2 centuries. However, the topics and ideas exploited have apparently remain the same. This down-trend can be interpreted by a general decrease in linguistic in the population, not only the President of the United States, but also by a strong mediatization that brought the need to be more reachable to the people of America.
+
+![US Capitol for Trump 2017](../figs/POTUS.jpg)
+
+For more information on Linguistic Complexity of the history of the POTUS inaugural speeches, here are some interesting links:
+[Education Approach to Linguistic Complexity Research](http://achievethecore.org/content/upload/nelson_perfetti_liben_measures_of_text_difficulty_research_ela.pdf)
+[Inaugural addresses of past presidents](http://www.cbsnews.com/news/inaugural-addresses-of-past-presidents/)
+[Trump Inaugural Speech against History](http://www.latimes.com/opinion/opinion-la/la-ol-trump-inauguration-kennedy-rosevelt-20170119-story.html)
 
