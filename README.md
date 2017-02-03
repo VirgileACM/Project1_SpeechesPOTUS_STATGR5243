@@ -1,6 +1,6 @@
 # Project1_SpeechesPOTUS_STATGR5243
 
-The main point of this project is to analyze the evolution of the compexity in language of American presidents through their first step as a fresh president: the Presidential Inaugural Speech.
+The main point of this project is to analyze the evolution of the complexity in language of American Presidents through their first step as a fresh President: the Presidential Inaugural Speech.
 
 ### Step 1 - Read in the speeches for Corpus Study
 
@@ -8,7 +8,7 @@ The main point of this project is to analyze the evolution of the compexity in l
 
 ### Step 3 - Read the speeches for general analysis
 
-### Step 4 - Interactive visualize important words in individual speeches
+### Step 4 - Interactive visualize important words in individual speeches (Shiny app)
 ![wordcloud of POTUS speeches](figs/fig1.png)
 
 ### Step 5 - Computation of Readability Index
