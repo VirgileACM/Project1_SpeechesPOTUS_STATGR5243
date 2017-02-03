@@ -1,0 +1,404 @@
+---
+title: "Project 1: Inaugural Speeches of US Presidents"
+runtime: shiny
+output:
+  html_document: default
+  html_notebook: default
+---
+
+#Step 0 - Install and load libraries
+
+We make sure that all the required libraries are correctly installed and loaded. We will use mainly NLP libraries.
+
+```{r, message=FALSE, warning=FALSE}
+packages.used=c("tm", "wordcloud", "RColorBrewer", 
+                "dplyr", "tydytext")
+
+# check packages that need to be installed.
+packages.needed=setdiff(packages.used, 
+                        intersect(installed.packages()[,1], 
+                                  packages.used))
+# install additional packages
+if(length(packages.needed)>0){
+  install.packages(packages.needed, dependencies = TRUE,
+                   repos='http://cran.us.r-project.org')
+}
+
+library(tm)
+library(wordcloud)
+library(RColorBrewer)
+library(dplyr)
+library(tidytext)
+library(qdap)
+library(qdapTools)
+
+# for home-made functions
+#source("../lib/speechFuncs.R")
+```
+
+This notebook was prepared with the following environmental settings.
+
+```{r}
+print(R.version)
+```
+
+# Step 1 - Read in the speeches for Corpus Study
+
+In this first step, we read and transfer all the speeches in our first data format: Corpus. The goal is to then apply a frequency approach to model each speech.
+
+```{r}
+folder.path="../data/InauguralSpeeches/"
+speeches=list.files(path = folder.path, pattern = "*.txt")
+prex.out=substr(speeches, 6, nchar(speeches)-4)
+
+ff.all<-Corpus(DirSource(folder.path))
+```
+
+#Step 2 - Text processing
+
+See [Basic Text Mining in R](https://rstudio-pubs-static.s3.amazonaws.com/31867_8236987cf0a8444e962ccd2aec46d9c3.html) for a more comprehensive discussion. 
+
+For the speeches, we remove extra white space, convert all letters to the lower case, remove [stop words](https://github.com/arc12/Text-Mining-Weak-Signals/wiki/Standard-set-of-english-stopwords), removed empty words due to formatting errors, and remove punctuation. Then we compute the [Document-Term Matrix (DTM)](https://en.wikipedia.org/wiki/Document-term_matrix).
+Finally we compute the [Term-Frequency Inverse Document Frequency](https://en.wikipedia.org/wiki/Tf%E2%80%93idf) weighted document-term matrices for all speeches. This allow us to find quantify the importance of each word in a text in comparaison of our Corpus.
+
+```{r}
+ff.all<-tm_map(ff.all, stripWhitespace)
+ff.all<-tm_map(ff.all, content_transformer(tolower))
+ff.all<-tm_map(ff.all, removeWords, stopwords("english"))
+ff.all<-tm_map(ff.all, removeWords, character(0))
+ff.all<-tm_map(ff.all, removePunctuation)
+
+tdm.all<-TermDocumentMatrix(ff.all)
+
+tdm.tidy=tidy(tdm.all)
+
+tdm.overall=summarise(group_by(tdm.tidy, term), sum(count))
+
+dtm <- DocumentTermMatrix(ff.all,
+                          control = list(weighting = function(x)
+                                             weightTfIdf(x, 
+                                                         normalize =FALSE),
+                                         stopwords = TRUE))
+ff.dtm=tidy(dtm)
+```
+
+#Step 3 - Read the speeches for general analysis
+
+Our goal is to find an interesting time-pattern only from the provided data, and then explore it in the most straight-forward fashion. To do so, we need a uniform dataframe that contains all the information related to the speeches.Hence, once our Corpus processing is done, we conduct in parralel an analysis of the meta data of each speech. We reload the dataset and merge it with the two other provided files to obtain the name of President, his Party, date and number of words of each speech.
+
+To merge the files, we procede to a few specific changes such as the name of the President (that differ for some between the files), or fill-in by hand some missing information. Also, we make important assumptions regarding the party. To carry-out an analysis across history, we need continuity. Therefore, based on information gathered online we assume Washington and Adams to be the equivalent of nowadays Democrats, the Democratic-Republican party and the Whig party to be Republicans.
+
+Sources:
+[Federalist Party](https://en.wikipedia.org/wiki/Federalist_Party)
+[Democratic-Republican Party](https://en.wikipedia.org/wiki/Democratic-Republican_Party)
+[Whig Party](https://en.wikipedia.org/wiki/Whig_Party_(United_States))
+
+```{r, message=FALSE, warning=FALSE}
+library("readr")
+library("xlsx")
+
+# Load the texts
+texts = paste(folder.path,speeches,sep="")
+ing_speeches = data.frame(File=prex.out, stringsAsFactors =F)
+ing_speeches$Speech = apply(as.data.frame(texts,stringsAsFactors =F),1,FUN=function(x)read_file(x))
+
+# Put name of president, term, party
+xlfile = read.xlsx2(file='../data/InaugurationInfo.xlsx',sheetIndex = 1, stringsAsFactors=F)
+xlfile$File = paste(xlfile$File, xlfile$Term, sep='-')
+ing_file <- merge(ing_speeches, xlfile, by='File')
+ing_file$Words[9] = 1433        # fill the last row since empty
+
+# Load and process date
+dates = read.table("../data/InauguationDates.txt", sep='\t', header=T, stringsAsFactors=F)
+# account for differences between db
+dates[22,1] ="Grover Cleveland - I"
+dates[24,1] ="Grover Cleveland - II"
+dates[11,1] = "James K. Polk"
+dates[20,1] = "James Garfield"
+dates[8,1] = "Martin van Buren"
+dates[37,1] = "Richard Nixon"
+
+dates_processed = data.frame(President=dates$PRESIDENT[dates$FIRST!=""],Term=1, Date=dates$FIRST[dates$FIRST!=""], stringsAsFactors=F)
+dates_processed <- rbind(dates_processed, data.frame(President=dates$PRESIDENT[dates$SECOND!=""],Term=2, Date=dates$SECOND[dates$SECOND!=""], stringsAsFactors=F))
+dates_processed <- rbind(dates_processed, data.frame(President=dates$PRESIDENT[dates$THIRD!=""],Term=3, Date=dates$THIRD[dates$THIRD!=""], stringsAsFactors=F))
+dates_processed <- rbind(dates_processed, data.frame(President=dates$PRESIDENT[dates$FOURTH!=""],Term=4, Date=dates$FOURTH[dates$FOURTH!=""], stringsAsFactors=F))
+
+ing_file <- merge(ing_file, dates_processed, by=c('President','Term'), all.x = TRUE)
+ing_file$Year <- apply(as.data.frame(ing_file$Date,stringsAsFactors =F),1,FUN=function(x)as.numeric(substr(x,nchar(x)-3,nchar(x))))
+ing_file$Words <- as.numeric(ing_file$Words) # transform words to integer
+
+# Approximation of Party to make it comparable to more recent US president
+ing_file$Party[ing_file$Party=="NA"] <- "Democratic" # George Washington
+ing_file$Party[ing_file$Party=="Fedralist"] <- "Democratic" # John Adams
+ing_file$Party[ing_file$Party=="Democratic-Republican Party"] <- "Republican"
+ing_file$Party[ing_file$Party=="Whig"] <- "Republican"
+```
+
+#Step 4 - Interactive visualize important words in individual speeches
+In order to find some meaningful hidden information across the history of Inaugural speeches of [POTUS](https://en.wikipedia.org/wiki/President_of_the_United_States), we can visualize the speeches using our TF-IDF matrices on a Wordcloud. For each speech, the words are displayed according their relative importance in the Corpus. We also cross the information with our meta data to display in blue the Democrats and in red the Republicans, as well as the year of each speech.
+
+Starting by comparing the inaugural speech of the 1st POTUS and the last one, one key difference is striking: the level of language. While George Washington's most relevant words are **providential**, **immutable**, **impressions**, **qualifications** and **peculiarly**, Donal J. Trump's top words are **America**, **Obama**, **dreams**, **everyone** and **dreams**. Comparing after Lincoln's first speech with Obama's, we observe the same difference: **clause**, **secede**, **case**, **minority** and **surrendered** against **icy**, **jobs**, **storms**, **winter** and **generation**.
+
+Then multiple questions arise:
+- Did the complexity of language of American presidents decreased during history?
+- Are the Democrats better/worse/equivalent in term of lingustic than Republicans?
+- 
+
+```{r, warning=FALSE}
+library(shiny)
+
+d<-new.env()
+d[["Republican"]] <- "Reds"; d[["Democratic"]] <- "Blues";
+
+shinyApp(
+    ui = fluidPage(
+      fluidRow(style = "padding-bottom: 20px;",
+        column(4, selectInput('speech1', 'Speech 1',
+                              speeches,
+                              selected=speeches[20])),
+        column(4, selectInput('speech2', 'Speech 2', speeches,
+                              selected=speeches[9])),
+        column(4, sliderInput('nwords', 'Number of words', 3,
+                               min = 20, max = 200, value=100, step = 20))
+      ),
+      fluidRow(
+        plotOutput('wordclouds', height = "600px")
+      )
+    ),
+
+    server = function(input, output, session) {
+
+      # Combine the selected variables into a new data frame
+      selectedData <- reactive({
+        list(dtm.term1=ff.dtm$term[ff.dtm$document==as.character(input$speech1)],
+             dtm.count1=ff.dtm$count[ff.dtm$document==as.character(input$speech1)],
+             dtm.term2=ff.dtm$term[ff.dtm$document==as.character(input$speech2)],
+             dtm.count2=ff.dtm$count[ff.dtm$document==as.character(input$speech2)])
+      })
+      
+      # find party and year of each speech in macro database
+      
+      charac <- reactive({
+        s1 <- substr(input$speech1, 6, nchar(input$speech1)-4)
+        s2 <- substr(input$speech2, 6, nchar(input$speech2)-4)
+        list(P1=ing_file$Party[ing_file$File==s1],
+             P2=ing_file$Party[ing_file$File==s2],
+             Y1=ing_file$Year[ing_file$File==s1],
+             Y2=ing_file$Year[ing_file$File==s2])
+      })
+      
+      output$wordclouds <- renderPlot(height = 600, {
+        #par(mfrow=c(2,2), mar = c(0, 0, 3, 0), heights=c(1,3))
+        layout(matrix(c(1,2,3,4),2,2,byrow=TRUE), heights=c(1,15), TRUE)
+        par(mar=c(0,0,0,0))
+        frame()
+        text(x=0.5, y=0.5, charac()$Y1, cex=2, font=2, col=ifelse(charac()$P1=="Democratic","deepskyblue2","firebrick2"))
+        par(mar=c(0,0,0,0))
+        frame()
+        text(x=0.5, y=0.5, charac()$Y2, cex=2, font=2, col=ifelse(charac()$P2=="Democratic","deepskyblue2","firebrick2"))
+        par(mar=c(0,0,0,0))
+        wordcloud(selectedData()$dtm.term1, 
+                  selectedData()$dtm.count1,
+              scale=c(4,0.5),
+              max.words=input$nwords,
+              min.freq=1,
+              random.order=FALSE,
+              rot.per=0,
+              use.r.layout=TRUE,
+              random.color=FALSE,
+              colors=brewer.pal(10,d[[charac()$P1]]),
+            main=input$speech1)
+        par(mar=c(0,0,0,0))
+        wordcloud(selectedData()$dtm.term2, 
+                  selectedData()$dtm.count2,
+              scale=c(4,0.5),
+              max.words=input$nwords,
+              min.freq=1,
+              random.order=FALSE,
+              rot.per=0,
+              use.r.layout=TRUE,
+              random.color=FALSE,
+              colors=brewer.pal(10,d[[charac()$P2]]), 
+            main=input$speech2)
+      })
+    },
+
+    options = list(height = 700)
+)
+```
+
+```{r, fig.height=6, fig.width=6, message=FALSE, warning=FALSE}
+library(ggplot2)
+ggplot(ing_file, aes(Year,Words)) + geom_bar(aes(fill=Party),width=4, stat="identity") + scale_fill_manual(values=c("blue", "red")) + ggtitle("Evolution of Party representation across history") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r, message=FALSE, warning=FALSE}
+source("../lib/complexityFunc.R")
+library(reshape2)
+ing_file$Speech[34] <- gsub("\u0097","",ing_file$Speech[34]) #avoid problems with exists()
+ing_file$ReadIndex <- unlist(lapply(ing_file$Speech,FUN=ReadabilityIndexes))
+# add abreviation for plotting
+ing_file$Abrev <- unlist(lapply(ing_file$President,FUN=Abrev))
+# squash words with sigmoid to display size of points accordingly
+# -> choice of a squashing function to highlight the most extreme points and sig(x) is in [0,1]
+ing_file$SigWords <- 14*sigmoid((ing_file$Words-mean(ing_file$Words))/sd(ing_file$Words)) # center and normalize before applying sigmoid
+# create segment for president evolution per term
+multiTermPresident <- c(ing_file$President[ing_file$Term>1], "Grover Cleveland - I")
+df <- ing_file[ing_file$President %in% multiTermPresident,c("President" ,"Term", "Year", "ReadIndex")]
+df$President[df$President=="Grover Cleveland - II"] <- "Grover Cleveland - I"  # to match Cleveland I and II
+segments <- Agg_Year_ReadIndex(df)
+# add segments for Franklin D. Roosevelt terms 3 and 4
+n <- dim(segments)[1]
+p <- "Franklin D. Roosevelt"
+segments[(n+1),] <- c(filter(df, President==p, Term==2)$Year, filter(df, President==p, Term==2)$ReadIndex, filter(df, President==p, Term==3)$Year, filter(df, President==p, Term==3)$ReadIndex)
+segments[(n+2),] <- c(filter(df, President==p, Term==3)$Year, filter(df, President==p, Term==3)$ReadIndex, filter(df, President==p, Term==4)$Year, filter(df, President==p, Term==4)$ReadIndex)
+# create dummy variable for positive or negative evolution
+segments$signe <- (segments$RI2-segments$RI1)>=0
+```
+
+
+```{r, fig.height=6, fig.width=6, message=FALSE, warning=FALSE}
+ggplot(ing_file, aes(Year,ReadIndex)) + geom_bar(aes(fill=Party),width=4, stat="identity") + scale_fill_manual(values=c("blue", "red")) + ggtitle("Evolution of Readability Index representation across history") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r, fig.height=6, fig.width=6, message=FALSE, warning=FALSE}
+plot <- ggplot(ing_file, aes(Year,ReadIndex, label=Abrev)) + geom_smooth(method="auto", colour="black", level=0.9) + geom_point(aes(colour = factor(Party))) + scale_colour_manual(values=c("blue", "red"), name="Party") + geom_text(aes(label=Abrev),hjust=-0.1, vjust=-0.2, size=2)
+
+plot + geom_smooth(data=ing_file[ing_file$Party=="Democratic",], aes(Year,ReadIndex), method="auto", colour="blue", level=0, size=0.5, linetype="dashed") + geom_smooth(data=ing_file[ing_file$Party=="Republican",], aes(Year,ReadIndex), method="auto", colour="red", level=0, size=0.5, linetype="dashed") 
+```
+
+#Shiny app
+```{r, warning=FALSE}
+library(shiny)
+library(ggpmisc)
+
+# home-made dictionnary to convert input choices to working methods
+dict<-new.env()
+dict[["Local Smooths"]] <- "loess";  dict[["Linear Model"]] <- "lm";
+dict[["Polynomial order 2"]] <- "lm"; dict[["Polynomial order 3"]] <- "lm";
+
+shinyApp(
+    # render UI
+    ui = fluidPage(
+      fluidRow(style = "padding-bottom: 20px;",
+        column(3, selectInput('disp_party', label = 'Which party to display', choices = c("None","Democratic","Republican","Both"))),
+        column(3, selectInput('reg_type', label = 'Type curve fitting', choices = c("Local Smooths","Linear Model","Polynomial order 2","Polynomial order 3"))),
+        column(3, sliderInput('y1', 'Bound year 1', value=1789,
+                               min = 1789, max = 2017, step = 4)),
+        column(3, sliderInput('y2', 'Bound year 2', value=2017,
+                               min = 1789, max = 2017, step = 4)),
+        column(3, checkboxInput("disp_sizePoint", "Point size ~ nb of words", value = FALSE), checkboxInput("disp_words", "Display number of words", value = FALSE)),
+        column(3, checkboxInput("disp_evol_term", "Display evolution president", value = FALSE), checkboxInput("disp_names", "Display names", value = FALSE)),
+        column(3, checkboxInput("disp_levels", "Display grades level", value = FALSE))
+      ),
+      fluidRow(
+        plotOutput('Figure', height = "600")
+      )
+    ),
+
+    server = function(input, output, session) {
+
+      # filter main data and segments data
+      selectedData <- reactive({
+        list(data=filter(ing_file, Year>=input$y1) %>% filter(Year<=input$y2),
+             segPlus=filter(segments, Y1>=input$y1) %>% filter(Y2<=input$y2) %>% filter(signe==TRUE),
+             segMinus=filter(segments, Y1>=input$y1) %>% filter(Y2<=input$y2) %>% filter(signe==FALSE))
+      })
+      
+      # ractive expression for dictionnary
+      method <- reactive({
+        dict[[input$reg_type]]
+      })
+  
+      # reactive expression for curve fitting (alternative to dictionnary)
+      expr <- reactive({
+        if (input$reg_type=="Polynomial order 2") "y~poly(x, 2, raw=T)"
+        else if (input$reg_type=="Polynomial order 3") "y~poly(x, 3, raw=T)"
+        else if (input$reg_type=="Exponential") "log(y)~x"
+        else "y~x"
+      })
+      
+      # main plot object
+      output$Figure <- renderPlot(height = 600, {
+                plot <- ggplot() + geom_smooth(selectedData()$data, mapping=aes(Year,ReadIndex), method=method(), formula=expr(), colour="black", level=0.9, size=2)  + scale_x_continuous(limits = c(input$y1, input$y2)) + ggtitle("Evolution of language complexity during POTUS inaugural speech")
+     if (input$disp_evol_term){
+        plot <- plot + geom_segment(data=selectedData()$segPlus, mapping=aes(x=Y1, xend=Y2, y=RI1, yend=RI2), size=1, color="green", arrow=arrow(length=unit(0.3,"cm"))) + geom_segment(data=selectedData()$segMinus, mapping=aes(x=Y1, xend=Y2, y=RI1, yend=RI2), size=1, color="orange", arrow=arrow(length=unit(0.3,"cm"))) + guides(size=FALSE)
+     }
+     # "sigmoid-scale" of points if asked to (choice of sigmoid function explained before)
+     if (input$disp_sizePoint){
+        plot <- plot + geom_point(selectedData()$data,mapping=aes(Year,ReadIndex,colour = factor(Party), size=SigWords)) + scale_colour_manual(values=c("blue", "red"), name="Party") + guides(size=FALSE)
+     }
+     else {
+        plot <- plot + geom_point(selectedData()$data, mapping=aes(Year,ReadIndex, colour = factor(Party)), size=3) + scale_colour_manual(values=c("blue", "red"), name="Party")
+     }
+     # display name of presidents if asked to
+     if (input$disp_names){
+        plot <- plot + geom_text(data=selectedData()$data, mapping=aes(Year,ReadIndex,label=Abrev),hjust=0.5, vjust=-0.9, size=4.5)
+     }
+     # display number of words if asked to            
+     if (input$disp_words){
+        plot <- plot + geom_text(data=selectedData()$data, mapping=aes(Year,ReadIndex,label=Words),hjust=0.5, vjust=1.6, size=4.5)
+     }
+     # display US grade equivalent if asked to
+     if (input$disp_levels){
+        plot <- plot + geom_hline(color=c("red","orange","green"),yintercept=c(8,10,14)) + annotate(geom="text", label=c("7th grade","9th Grade","College"), x=c(input$y1,input$y1,input$y1), y=c(8,10,14), vjust=-1, fontface=2)
+     }
+     # display curve fitting equations if not local smoothing
+     if (input$reg_type!="Local Smooths") {
+        plot <- plot + stat_poly_eq(data=selectedData()$data, formula = expr(), eq.with.lhs = "italic(hat(y))~`=`~", aes(Year,ReadIndex,label = paste(..eq.label.., ..rr.label.., sep = "~~~")),parse = TRUE, label.x.npc = 0.75, label.y.npc = 0.97, size=5)
+     }
+     # curve fitting for party if asked to
+     if (input$disp_party=="Both" || input$disp_party=="Democratic") {
+        plot <- plot + geom_smooth(data=selectedData()$data[selectedData()$ data$Party=="Democratic",], aes(Year,ReadIndex), method=method(), formula = expr(), level=0, size=1, linetype="dashed", colour="blue")
+       if (input$reg_type!="Local Smooths") {
+         plot <- plot + stat_poly_eq(data=selectedData()$data[selectedData()$ data$Party=="Democratic",], formula = expr(), eq.with.lhs = "italic(hat(y))~`=`~", aes(Year,ReadIndex, label = paste(..eq.label.., ..rr.label.., sep = "~~~")),parse = TRUE, label.x.npc = 0.75, label.y.npc = 0.90, color="blue", size=5)
+       }
+     }
+     if (input$disp_party=="Both" || input$disp_party=="Republican"){
+       plot <- plot + geom_smooth(data=ing_file[selectedData()$data$Party=="Republican",], aes(Year,ReadIndex), method=method(), formula = expr(), level=0, size=1, linetype="dashed", colour="red")
+       if (input$reg_type!="Local Smooths") {
+         plot <- plot + stat_poly_eq(data=ing_file[selectedData()$data$Party=="Republican",], formula = expr(), eq.with.lhs = "italic(hat(y))~`=`~", aes(Year,ReadIndex, label = paste(..eq.label.., ..rr.label.., sep = "~~~")),parse = TRUE, label.x.npc = 0.75, label.y.npc = 0.83, color="red", size=5)
+       }
+     }
+     plot <- plot + theme(legend.text = element_text(size = rel(1.3)), legend.title = element_text(size = rel(1.3)) ,axis.text = element_text(size = rel(1.2)), axis.title = element_text(size = rel(1.3)), plot.title = element_text(size=rel(1.5), hjust=0.5), legend.position = c(0.85,0.5), legend.background = element_rect(fill=alpha('blue', 0))) + labs(y="US Grades level")
+     # if (input$disp_evol_term){
+     #    plot <- plot + geom_segment(data=selectedData()$segPlus, mapping=aes(x=Y1, xend=Y2, y=RI1, yend=RI2), size=1, color="green", arrow=arrow(length=unit(0.3,"cm"))) + geom_segment(data=selectedData()$segMinus, mapping=aes(x=Y1, xend=Y2, y=RI1, yend=RI2), size=1, color="orange", arrow=arrow(length=unit(0.3,"cm"))) + guides(size=FALSE)
+     # }
+    print(plot)
+      })
+    },
+    options = list(height = 800)
+)
+```
+
+
+```{r}
+library(RWeka)
+library(lsa)
+library(topicmodels)
+options(mc.cores=1)
+#BigramTokenizer <- function(x) unlist(lapply(ngrams(words(x), 2), paste, collapse = " "), use.names = TRUE)
+BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min=2, max=3))
+
+tdmgram.all<-TermDocumentMatrix(ff.all, control = list(tokenize = BigramTokenizer, wordLengths = c(3, Inf) ))
+
+tdmgram.overall=summarise(group_by(tdmgram.tidy, term), sum(count))
+
+dtmgram <- DocumentTermMatrix(ff.all,
+                          control = list(tokenize = BigramTokenizer, wordLengths = c(3, Inf), weighting = function(x) weightTf(x), stopwords = TRUE))
+
+dtmgram.tidy = tidy(dtmgram)
+
+ls <- lsa(as.textmatrix(as.matrix(dtmgram)), dims=10)
+concepts.top10 <- apply(ls$dk, 2, function(x)unique(names((sort(x, decreasing = T))))[1:10])
+for (i in 1:7) { writeLines(paste("\n","concept",i,"\n",sep=" "));print(concepts.top10[,i]) }
+
+#Number of topics
+#k <- 5
+#Run LDA using Gibbs sampling
+#ldaOut <-LDA(dtmgram, k)
+```
+```{r}
+
+```
+
