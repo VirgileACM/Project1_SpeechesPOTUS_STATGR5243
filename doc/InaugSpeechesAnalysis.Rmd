@@ -11,8 +11,9 @@ output:
 We make sure that all the required libraries are correctly installed and loaded. We will use mainly NLP libraries.
 
 ```{r, message=FALSE, warning=FALSE}
-packages.used=c("tm", "wordcloud", "RColorBrewer", 
-                "dplyr", "tydytext")
+packages.used=c("tm", "wordcloud", "RColorBrewer", "dplyr", "tydytext", "qdap", 
+                "qdapTools", "readr", "xlsx", "shiny", "ggplot2", "reshape2", "ggpmisc", 
+                "RWeka", "lsa", "topicmodels")
 
 # check packages that need to be installed.
 packages.needed=setdiff(packages.used, 
@@ -31,10 +32,20 @@ library(dplyr)
 library(tidytext)
 library(qdap)
 library(qdapTools)
+library(readr)
+library(xlsx)
+library(shiny)
+library(ggplot2)
+library(reshape2)
+library(ggpmisc)
+library(RWeka)
+library(lsa)
+library(topicmodels)
 
 # for home-made functions
-#source("../lib/speechFuncs.R")
+source("../lib/complexityFunc.R")
 ```
+
 
 This notebook was prepared with the following environmental settings.
 
@@ -94,9 +105,6 @@ Sources:
 [Whig Party](https://en.wikipedia.org/wiki/Whig_Party_(United_States))
 
 ```{r, message=FALSE, warning=FALSE}
-library("readr")
-library("xlsx")
-
 # Load the texts
 texts = paste(folder.path,speeches,sep="")
 ing_speeches = data.frame(File=prex.out, stringsAsFactors =F)
@@ -134,19 +142,13 @@ ing_file$Party[ing_file$Party=="Democratic-Republican Party"] <- "Republican"
 ing_file$Party[ing_file$Party=="Whig"] <- "Republican"
 ```
 
+
 #Step 4 - Interactive visualize important words in individual speeches
+
 In order to find some meaningful hidden information across the history of Inaugural speeches of [POTUS](https://en.wikipedia.org/wiki/President_of_the_United_States), we can visualize the speeches using our TF-IDF matrices on a Wordcloud. For each speech, the words are displayed according their relative importance in the Corpus. We also cross the information with our meta data to display in blue the Democrats and in red the Republicans, as well as the year of each speech.
 
-Starting by comparing the inaugural speech of the 1st POTUS and the last one, one key difference is striking: the level of language. While George Washington's most relevant words are **providential**, **immutable**, **impressions**, **qualifications** and **peculiarly**, Donal J. Trump's top words are **America**, **Obama**, **dreams**, **everyone** and **dreams**. Comparing after Lincoln's first speech with Obama's, we observe the same difference: **clause**, **secede**, **case**, **minority** and **surrendered** against **icy**, **jobs**, **storms**, **winter** and **generation**.
-
-Then multiple questions arise:
-- Did the complexity of language of American presidents decreased during history?
-- Are the Democrats better/worse/equivalent in term of lingustic than Republicans?
-- 
 
 ```{r, warning=FALSE}
-library(shiny)
-
 d<-new.env()
 d[["Republican"]] <- "Reds"; d[["Democratic"]] <- "Blues";
 
@@ -226,22 +228,35 @@ shinyApp(
     options = list(height = 700)
 )
 ```
+Starting by comparing the inaugural speech of the 1st POTUS and the last one, one key difference is striking: the level of language. While George Washington's most relevant words are **providential**, **immutable**, **impressions**, **qualifications** and **peculiarly**, Donal J. Trump's top words are **America**, **Obama**, **dreams**, **everyone** and **dreams**. Comparing after Lincoln's first speech with Obama's, we observe the same difference: **clause**, **secede**, **case**, **minority** and **surrendered** against **icy**, **jobs**, **storms**, **winter** and **generation**.
 
-```{r, fig.height=6, fig.width=6, message=FALSE, warning=FALSE}
-library(ggplot2)
-ggplot(ing_file, aes(Year,Words)) + geom_bar(aes(fill=Party),width=4, stat="identity") + scale_fill_manual(values=c("blue", "red")) + ggtitle("Evolution of Party representation across history") + theme(plot.title = element_text(hjust = 0.5))
-```
+Then multiple questions arise:
+
+- Did the complexity of language of American presidents decreased during history?
+
+- Are the Democrats better/worse/equivalent in term of lingustic than Republicans?
+
+- How do President evolve during 2 terms or more?
+
+- How to quantify the level of lingustic complexity?
+
+The reponse to the last question is at the beginning the most important. For modelling this relationship, we decide to use classical techniques that has been proven to be robust for many types of text. The methods are [Coleman Liau](https://en.wikipedia.org/wiki/Coleman%E2%80%93Liau_index),
+[Automated Readability Index](https://en.wikipedia.org/wiki/Automated_readability_index) and  [Flesch_Kincaid](https://en.wikipedia.org/wiki/Flesch%E2%80%93Kincaid_readability_tests). They all quantify with a score the Reader's required level of education to understand most of the text. The score can then be translated to an equivalent in US Grades level. All 3 are formulas that were somehow fitted to some text-data, hence we proceed to the equivalent of a small regression ensemble-learning procedure where we take the average over the 3 learners. They also all rely on a frequentist approach where we use features such as the length of words, the length of sentences or the number of times a word is repeated. 
+It is worth noting that the field of linguistic complexity is quite vast and interesting, and there obviously exist other methods. However, most of these [methods](http://images.pearsonassessments.com/images/tmrs/Word_Maturity_and_Text_Complexity_NCME.pdf) are proprietary and made for eduction; they also directly link the result to the reader, to achieve a better precision, but it is not possible for our dataset as we try to estimate an absolute index of readability.
+
+# Step 5 - Computation of Readability Index
+
+We now calculate the Readability index using a helper function. We also clean our datasets and prepare a few modifications for visualization purposes. Our main goal is here to concentrate as much as information on one plot to be able to visualize quickly different phenomenons.
 
 ```{r, message=FALSE, warning=FALSE}
-source("../lib/complexityFunc.R")
-library(reshape2)
 ing_file$Speech[34] <- gsub("\u0097","",ing_file$Speech[34]) #avoid problems with exists()
+# Calculation of Reading Index as the average of 3 calculated Index
 ing_file$ReadIndex <- unlist(lapply(ing_file$Speech,FUN=ReadabilityIndexes))
 # add abreviation for plotting
 ing_file$Abrev <- unlist(lapply(ing_file$President,FUN=Abrev))
 # squash words with sigmoid to display size of points accordingly
 # -> choice of a squashing function to highlight the most extreme points and sig(x) is in [0,1]
-ing_file$SigWords <- 14*sigmoid((ing_file$Words-mean(ing_file$Words))/sd(ing_file$Words)) # center and normalize before applying sigmoid
+ing_file$SigWords <- 20*sigmoid((ing_file$Words-mean(ing_file$Words))/sd(ing_file$Words)) # center and normalize before applying sigmoid
 # create segment for president evolution per term
 multiTermPresident <- c(ing_file$President[ing_file$Term>1], "Grover Cleveland - I")
 df <- ing_file[ing_file$President %in% multiTermPresident,c("President" ,"Term", "Year", "ReadIndex")]
@@ -252,26 +267,31 @@ n <- dim(segments)[1]
 p <- "Franklin D. Roosevelt"
 segments[(n+1),] <- c(filter(df, President==p, Term==2)$Year, filter(df, President==p, Term==2)$ReadIndex, filter(df, President==p, Term==3)$Year, filter(df, President==p, Term==3)$ReadIndex)
 segments[(n+2),] <- c(filter(df, President==p, Term==3)$Year, filter(df, President==p, Term==3)$ReadIndex, filter(df, President==p, Term==4)$Year, filter(df, President==p, Term==4)$ReadIndex)
-# create dummy variable for positive or negative evolution
+# create dummy variable for positive or negative evolution of ReadIndex
 segments$signe <- (segments$RI2-segments$RI1)>=0
 ```
 
+# Step 6 - Visualization of data
+
+To start with, we simply plot the number of words according to the time, but by making the distinction between Republicans and Democrats President. We can observe that the turn-over of party is quite significant, with very rarely one party staying for more than 4 terms in a row. This allows us to assume a suffisant resampling of personalities and advisors of Presidents to keep a relatively low auto-correlation.
+
+```{r, fig.height=6, fig.width=6, message=FALSE, warning=FALSE}
+ggplot(ing_file, aes(Year,Words)) + geom_bar(aes(fill=Party),width=4, stat="identity") + scale_fill_manual(values=c("blue", "red")) + ggtitle("Evolution of Party representation across history") + theme(plot.title = element_text(hjust = 0.5))
+```
+
+After, we display the evolution of the Reading Index according to the time throughout American Presidential history. Higher score means a more difficult content, i.e. a more linguistic-complexified text. Without knowing how to interpret with precision the Y-axis, we can see direcly the down-trend that the President suffer from. In about 200 years, the average Readability Index has been divided by 2. 
+
+With now, a more complex graph, we will answer most of the questions we asked ourselves before.
 
 ```{r, fig.height=6, fig.width=6, message=FALSE, warning=FALSE}
 ggplot(ing_file, aes(Year,ReadIndex)) + geom_bar(aes(fill=Party),width=4, stat="identity") + scale_fill_manual(values=c("blue", "red")) + ggtitle("Evolution of Readability Index representation across history") + theme(plot.title = element_text(hjust = 0.5))
 ```
 
-```{r, fig.height=6, fig.width=6, message=FALSE, warning=FALSE}
-plot <- ggplot(ing_file, aes(Year,ReadIndex, label=Abrev)) + geom_smooth(method="auto", colour="black", level=0.9) + geom_point(aes(colour = factor(Party))) + scale_colour_manual(values=c("blue", "red"), name="Party") + geom_text(aes(label=Abrev),hjust=-0.1, vjust=-0.2, size=2)
+# Step 7 - Interactive Visualization of the evolution of the Readability Index across American Inaugural Speeches history (Shiny app)
 
-plot + geom_smooth(data=ing_file[ing_file$Party=="Democratic",], aes(Year,ReadIndex), method="auto", colour="blue", level=0, size=0.5, linetype="dashed") + geom_smooth(data=ing_file[ing_file$Party=="Republican",], aes(Year,ReadIndex), method="auto", colour="red", level=0, size=0.5, linetype="dashed") 
-```
+This Shiny app is made to be discovered by the user to make her or him forge an enlighten opinion on the topic. Mostly, the app provides the ability to conduct differents kind of regression, on different timelines and for each party. Also, it is possible to display the evolution term per term of the president to see if they actually increased or decreased their linguistic level. To give a reference, a scale with US grade system is available. As a reminder, 7th grade is about 12 years old, 9th grade is 14 years old and college is about 18 year old.
 
-#Shiny app
 ```{r, warning=FALSE}
-library(shiny)
-library(ggpmisc)
-
 # home-made dictionnary to convert input choices to working methods
 dict<-new.env()
 dict[["Local Smooths"]] <- "loess";  dict[["Linear Model"]] <- "lm";
@@ -360,10 +380,9 @@ shinyApp(
          plot <- plot + stat_poly_eq(data=ing_file[selectedData()$data$Party=="Republican",], formula = expr(), eq.with.lhs = "italic(hat(y))~`=`~", aes(Year,ReadIndex, label = paste(..eq.label.., ..rr.label.., sep = "~~~")),parse = TRUE, label.x.npc = 0.75, label.y.npc = 0.83, color="red", size=5)
        }
      }
+     # final theme
      plot <- plot + theme(legend.text = element_text(size = rel(1.3)), legend.title = element_text(size = rel(1.3)) ,axis.text = element_text(size = rel(1.2)), axis.title = element_text(size = rel(1.3)), plot.title = element_text(size=rel(1.5), hjust=0.5), legend.position = c(0.85,0.5), legend.background = element_rect(fill=alpha('blue', 0))) + labs(y="US Grades level")
-     # if (input$disp_evol_term){
-     #    plot <- plot + geom_segment(data=selectedData()$segPlus, mapping=aes(x=Y1, xend=Y2, y=RI1, yend=RI2), size=1, color="green", arrow=arrow(length=unit(0.3,"cm"))) + geom_segment(data=selectedData()$segMinus, mapping=aes(x=Y1, xend=Y2, y=RI1, yend=RI2), size=1, color="orange", arrow=arrow(length=unit(0.3,"cm"))) + guides(size=FALSE)
-     # }
+
     print(plot)
       })
     },
@@ -371,34 +390,50 @@ shinyApp(
 )
 ```
 
+The results are quite clear, the **level is decreasing at least linearly at a rate of about 5% a year**. Also, **being Democrats or Republicans does not help**. It appears that they both are very similar in term of level of language. During the 19th century, Republicans seem to have been less sophiticated than their colleagues Democrats, however, the 20th century seem to prove the opposite with poor prestations of F.Roosevelt or L.Johnson. The worst grade is given to Georges H.W.Bush with a technical level Kindergarten. This seem quite accurate as underline this [source](http://www.globalresearch.ca/the-inaugural-speech-of-a-us-president-history-wisdom-and-the-trump-presidency/5568582) which relates that during his inaugural speech, the President G.H.W. Bush compared freedom to a kite.
+
+Also, it is interesting to look at the levels crossed during the 20th century. According to the data, no President since 1910 has given an inaugural speech at a level above College. On the other hand, only 4 Presidents have given a speech below College level until the 20th century. However, it is important to know that historically, the inaugural speech was not delivered to such an important crowd as now. It is only very recently that the inaugural speech became so popular due to communication tools available but also by being open to the public (historically it was given in the Congress). Nevertheless, we can observe that in-between 1975 to today, the average level is about 8th grade. The recent speech of D.J. Trump is also dragging the average down with an equivalent level of a 6th grader. 
+
+Finally, another interesting pattern is the evolution of linguistic level for Presidents that had more than one term. Clearly, some President (or their personal writer) seem to have been more lazy than other on their speeches. During tension and then War time, the level of F. Roosevelt significantly dropped, whereas Obama improved his speech the second year while already above the average. One specific interesting fact, is that President for their second term tend suffer from mean-reversion, a higher-than average speech the first term seems a good predictor for a below average second speech according to the data both from 19th and 20th century.
+
+
+# Step 8 - Topic modelling as an alternative to regression
+
+Now, as a tentative, we will try to find some correlation between the complexity of speech and the topics covered.
+
+To do so, we will use a Tokenizer in Bigram (tokenize word and couple of consecutive words), that we will modelize again through a Term Document Matrix for test with [Latent Semantic Analysis](https://en.wikipedia.org/wiki/Latent_semantic_analysis) a similar approach to PCA but more suitable for text-based material.
+
+We compute 10 concepts
 
 ```{r}
-library(RWeka)
-library(lsa)
-library(topicmodels)
+# to compute faster NGramTokenizer by avoiding parrallelization that is poorly implemented
 options(mc.cores=1)
-#BigramTokenizer <- function(x) unlist(lapply(ngrams(words(x), 2), paste, collapse = " "), use.names = TRUE)
-BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min=2, max=3))
 
-tdmgram.all<-TermDocumentMatrix(ff.all, control = list(tokenize = BigramTokenizer, wordLengths = c(3, Inf) ))
+NgramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min=1, max=2))
 
-tdmgram.overall=summarise(group_by(tdmgram.tidy, term), sum(count))
+# garbage word that comes often in result of LSA, keep result clean
+ff.all<-tm_map(ff.all, removeWords, c("us", "americaprevious", "upon", "shall", "roman", "texas", "ballot", "amid", "arrive"))
 
-dtmgram <- DocumentTermMatrix(ff.all,
-                          control = list(tokenize = BigramTokenizer, wordLengths = c(3, Inf), weighting = function(x) weightTf(x), stopwords = TRUE))
+tdmgram<-TermDocumentMatrix(ff.all, control = list(tokenize = NgramTokenizer, wordLengths = c(1, Inf) ))
 
-dtmgram.tidy = tidy(dtmgram)
+dims <- 10
+ls <- lsa(as.textmatrix(as.matrix(tdmgram)), dims=dims)
+concepts.names <- c("Constitution","State","Values","Action","Union","Universal","People","America","Laws","Nation")
+concepts.top10 <- apply(ls$tk, 2, function(x)unique(names((sort(x, decreasing = T))))[1:10])
+for (i in 1:dims) { writeLines(paste("\n","Concept",i,": ",concepts.names[i],"\n",sep=" "));print(concepts.top10[,i]) }
 
-ls <- lsa(as.textmatrix(as.matrix(dtmgram)), dims=10)
-concepts.top10 <- apply(ls$dk, 2, function(x)unique(names((sort(x, decreasing = T))))[1:10])
-for (i in 1:7) { writeLines(paste("\n","concept",i,"\n",sep=" "));print(concepts.top10[,i]) }
-
-#Number of topics
-#k <- 5
-#Run LDA using Gibbs sampling
-#ldaOut <-LDA(dtmgram, k)
 ```
+
 ```{r}
+# update with concepts
+ls_df <- as.data.frame(ls$dk)
+#names(ls_df) <- concepts.names
+ing_final <- cbind(ing_file, ls$dk)
+names(ing_final)[12:21] <- concepts.names
+ing_final[12:21] <- apply(ing_final[12:21], 2 , FUN=function(x)(x-min(x))/(max(x)-min(x))) # normalization variable to [0,1] range
+ing_final[12:21] <- t(apply(ing_final[12:21],1,function(x)cumsum(x)/max(cumsum(x))))
 
+ggplot(data=ing_final, aes(x=Year)) + geom_ribbon(aes(ymin=0,ymax=Nation), fill="gold")+ geom_ribbon(aes(ymin=0,ymax=Laws), fill="darkorange") + geom_ribbon(aes(ymin=0,ymax=America), fill="firebrick2")  + geom_ribbon(aes(ymin=0,ymax=People), fill="firebrick4") + geom_ribbon(aes(ymin=0,ymax=Universal), fill="darkmagenta") + geom_ribbon(aes(ymin=0,ymax=Union), fill="darkorchid4") + geom_ribbon(aes(ymin=0,ymax=Action), fill="darkorchid1") + geom_ribbon(aes(ymin=0,ymax=Values), fill="dodgerblue3") + geom_ribbon(aes(ymin=0,ymax=State), fill="dodgerblue") + geom_ribbon(aes(ymin=0,ymax=Constitution), fill="deepskyblue") + ggtitle("vrvr") + annotate(geom="text", label=concepts.names, x=rep(1790,10), y=seq(0.05,0.90,length.out = 10), vjust=-1, fontface=2)+ggtitle("Evolution of concepts across history as a stacked-bar") + labs(y="Proportion importance of concept") + theme(plot.title = element_text(hjust=0.5))
 ```
+
 

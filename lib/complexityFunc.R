@@ -1,21 +1,21 @@
-sentences = c("Hello world","This is a simple sentence","Yesterday I went out with my dog and my wife",
-             "If a man does not keep pace with his companions, perhaps it is because he hears a different drummer",
-             "The path to my fixed purpose is laid on iron rails, on which my soul is grooved to run.",
-             "No man, in all the procession of famous men, is reason or illumination, or that essence we were looking for; but is an exhibition, in some quarter, of new possibilities.")
-             
-
-df = data.frame(sentences=sentences)
 library(qdap)
 library(tm)
 
+# recode sigmoid function
 sigmoid = function(x) {
   1 / (1 + exp(-x))
 }
 
+# to compute abreviation of US President
 Abrev <- function(x){
   name <- strsplit(x," ")
   return(paste(substr(name[[1]][1],1,1),".",name[[1]][length(name[[1]])],sep="") )
 }
+
+# Compute our index of readability based on the average of 3 measures:
+# Coleman Liau, based on text. Gives equivalent to US Grade level (https://en.wikipedia.org/wiki/Coleman%E2%80%93Liau_index)
+# ARI, based on text. Gives equivalent of US Grade level (https://en.wikipedia.org/wiki/Automated_readability_index)
+# Flesch_Kincaid, based on text. Gives ease to read and US Grade level (https://en.wikipedia.org/wiki/Flesch%E2%80%93Kincaid_readability_tests)
 
 ReadabilityIndexes <- function(x){
   sentences=sent_detect(x, endmarks = c("?", ".", "!", "|",";"))
@@ -36,11 +36,3 @@ Agg_Year_ReadIndex <- function(df){
   return(df_out)
 }
 
-
-#df$ColemanLiau <- apply(df,1,FUN=function(x) coleman_liau(x)$Readability$Coleman_Liau)
-
-# Interactive test online (https://readability-score.com/text/)
-
-# Coleman Liau, based on text. Gives equivalent to US Grade level (https://en.wikipedia.org/wiki/Coleman%E2%80%93Liau_index)
-# ARI, based on text. Gives equivalent of US Grade level (https://en.wikipedia.org/wiki/Automated_readability_index)
-# Flesch_Kincaid, based on text. Gives ease to read and US Grade level (https://en.wikipedia.org/wiki/Flesch%E2%80%93Kincaid_readability_tests)
